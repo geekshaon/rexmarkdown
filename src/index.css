@@ -1170,16 +1170,30 @@ body {
     padding-bottom: calc(56px + env(safe-area-inset-bottom, 0px));
   }
 
-  /* When virtual keyboard is active, hide bottom nav and let workspace fill visible space */
-  body.keyboard-open .mobile-nav {
+  /* When virtual keyboard is active, hide bottom nav completely and let workspace fill visible space */
+  body.keyboard-open .mobile-nav,
+  .keyboard-open .mobile-nav,
+  .app--keyboard-active .mobile-nav {
     display: none !important;
+    visibility: hidden !important;
+    height: 0 !important;
+    max-height: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    pointer-events: none !important;
+    opacity: 0 !important;
   }
 
-  body.keyboard-open .main {
+  body.keyboard-open .main,
+  .keyboard-open .main,
+  .app--keyboard-active .main {
     padding-bottom: 0 !important;
   }
 
-  body.keyboard-open .mobile-ribbon {
+  body.keyboard-open .mobile-ribbon,
+  .keyboard-open .mobile-ribbon,
+  .app--keyboard-active .mobile-ribbon {
+    display: flex !important;
     position: relative;
     z-index: 100;
     box-shadow: 0 -3px 14px rgba(0, 0, 0, 0.5);

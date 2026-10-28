@@ -47,6 +47,9 @@ function App() {
   const [showSyncModal, setShowSyncModal]     = useState(false);
   const [scrollPct, setScrollPct]             = useState(0);
   const [toasts, setToasts]                   = useState<Toast[]>([]);
+  const [isEditorFocused, setIsEditorFocused] = useState(false);
+  const [isViewportShrunk, setIsViewportShrunk] = useState(false);
+  const isKeyboardActive = isEditorFocused || isViewportShrunk;
 
   const editorApiRef     = useRef<EditorApi | null>(null);
   const formatHandlerRef = useRef<((type: string) => void) | null>(null);
@@ -234,26 +237,38 @@ function App() {
 
   // Mobile virtual keyboard & visual viewport dynamic height handling
   useEffect(() => {
-    const vv = window.visualViewport;
-    if (!vv) return;
+    const initialHeight = window.innerHeight;
+
+    const checkInputFocused = () => {
+      const el = document.activeElement;
+      if (!el) return false;
+      return el.closest('.cm-editor') !== null || el.tagName === 'INPUT' || el.tagName === 'TEXTAREA';
+    };
 
     let timer: ReturnType<typeof setTimeout>;
 
     const handleViewportChange = () => {
-      const vh = vv.height;
+      const vv = window.visualViewport;
+      const vh = vv ? vv.height : window.innerHeight;
       const ih = window.innerHeight;
-      // If visual viewport shrank significantly, virtual keyboard is open
-      const keyboardOpen = ih - vh > 100;
 
+      // Detect keyboard opening across Android Chrome, iOS Safari, etc.
+      const isShrunk =
+        (vv && ih - vh > 80) ||
+        (initialHeight - ih > 120) ||
+        (initialHeight - vh > 120) ||
+        (window.screen.height - ih > 160 && ih < window.screen.height * 0.8) ||
+        checkInputFocused();
+
+      setIsViewportShrunk(isShrunk);
       document.documentElement.style.setProperty('--app-height', `${vh}px`);
-      document.body.classList.toggle('keyboard-open', keyboardOpen);
 
       // On iOS, prevent viewport scroll displacement
       if (window.scrollY !== 0) {
         window.scrollTo(0, 0);
       }
 
-      if (keyboardOpen) {
+      if (isShrunk) {
         clearTimeout(timer);
         timer = setTimeout(() => {
           editorApiRef.current?.scrollCursorIntoView(90);
@@ -261,22 +276,58 @@ function App() {
       }
     };
 
+    const handleFocusIn = () => {
+      if (checkInputFocused()) {
+        setIsEditorFocused(true);
+        setIsViewportShrunk(true);
+        document.body.classList.add('keyboard-open');
+        clearTimeout(timer);
+        timer = setTimeout(() => {
+          editorApiRef.current?.scrollCursorIntoView(90);
+        }, 150);
+      }
+    };
+
+    const handleFocusOut = () => {
+      setTimeout(() => {
+        if (!checkInputFocused()) {
+          setIsEditorFocused(false);
+          handleViewportChange();
+        }
+      }, 120);
+    };
+
     handleViewportChange();
-    vv.addEventListener('resize', handleViewportChange);
-    vv.addEventListener('scroll', handleViewportChange);
+
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize', handleViewportChange);
+      window.visualViewport.addEventListener('scroll', handleViewportChange);
+    }
+    window.addEventListener('resize', handleViewportChange);
+    window.addEventListener('focusin', handleFocusIn);
+    window.addEventListener('focusout', handleFocusOut);
 
     return () => {
       clearTimeout(timer);
-      vv.removeEventListener('resize', handleViewportChange);
-      vv.removeEventListener('scroll', handleViewportChange);
-      document.body.classList.remove('keyboard-open');
+      if (window.visualViewport) {
+        window.visualViewport.removeEventListener('resize', handleViewportChange);
+        window.visualViewport.removeEventListener('scroll', handleViewportChange);
+      }
+      window.removeEventListener('resize', handleViewportChange);
+      window.removeEventListener('focusin', handleFocusIn);
+      window.removeEventListener('focusout', handleFocusOut);
     };
   }, []);
+
+  // Synchronize keyboard-open class on body
+  useEffect(() => {
+    document.body.classList.toggle('keyboard-open', isKeyboardActive);
+  }, [isKeyboardActive]);
 
   const isZen = layoutMode === 'zen';
 
   return (
-    <div className={`app ${sidebarOpen && !isZen ? 'app--sidebar-open' : ''} ${isZen ? 'app--zen' : ''}`}>
+    <div className={`app ${sidebarOpen && !isZen ? 'app--sidebar-open' : ''} ${isZen ? 'app--zen' : ''} ${isKeyboardActive ? 'app--keyboard-active' : ''}`}>
       {/* Hidden file input for import */}
       <input
         ref={importInputRef}
@@ -354,6 +405,7 @@ function App() {
                   onScrollPct={handleEditorScroll}
                   onEditorApi={handleEditorApi}
                   onImagePaste={handleImagePaste}
+                  onFocusChange={setIsEditorFocused}
                 />
               ) : (
                 <div className="empty-state">No document selected</div>
@@ -381,7 +433,10 @@ function App() {
         {!isZen && layoutMode !== 'preview' && (
           <MobileFormatRibbon
             onFormat={handleFormat}
-            onDismissKeyboard={() => editorApiRef.current?.blur()}
+            onDismissKeyboard={() => {
+              editorApiRef.current?.blur();
+              setIsEditorFocused(false);
+            }}
           />
         )}
 
@@ -397,8 +452,8 @@ function App() {
         )}
       </main>
 
-      {/* Mobile Native Bottom Navigation */}
-      {!isZen && (
+      {/* Mobile Native Bottom Navigation - Hidden when keyboard is open or editor is focused */}
+      {!isZen && !isKeyboardActive && (
         <MobileBottomNav
           layoutMode={layoutMode}
           onLayoutChange={setLayoutMode}

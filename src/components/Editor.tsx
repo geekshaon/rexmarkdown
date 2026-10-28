@@ -48,6 +48,7 @@ interface EditorProps {
   onViewReady?: (view: EditorView) => void;
   onImagePaste?: (dataUrl: string) => void;
   onEditorApi?: (api: EditorApi) => void;
+  onFocusChange?: (focused: boolean) => void;
 }
 
 // ─── Format helpers ─────────────────────────────────────────────────────────
@@ -139,6 +140,7 @@ export const Editor: React.FC<EditorProps> = ({
   onViewReady,
   onImagePaste,
   onEditorApi,
+  onFocusChange,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -217,6 +219,7 @@ export const Editor: React.FC<EditorProps> = ({
         // Scroll & focus listener
         EditorView.domEventHandlers({
           focus(_event, view) {
+            onFocusChange?.(true);
             // When opening virtual keyboard on mobile, keyboard animation takes 250-320ms
             setTimeout(() => {
               if (view.hasFocus) {
@@ -226,6 +229,9 @@ export const Editor: React.FC<EditorProps> = ({
                 });
               }
             }, 300);
+          },
+          blur(_event) {
+            onFocusChange?.(false);
           },
           scroll(_event, view) {
             if (!onScrollPct) return;
@@ -434,6 +440,12 @@ export const Editor: React.FC<EditorProps> = ({
       ref={containerRef}
       className="editor-container"
       onPaste={handlePaste}
+      onFocusCapture={() => onFocusChange?.(true)}
+      onBlurCapture={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
+          onFocusChange?.(false);
+        }
+      }}
       aria-label="Markdown editor"
     />
   );
