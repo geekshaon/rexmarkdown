@@ -18,6 +18,7 @@ export type SyncMessage =
   | { type: 'SYNC_OFFER'; documents: Document[] }
   | { type: 'SYNC_REPLY'; documents: Document[]; stats: MergeResult['stats'] }
   | { type: 'LIVE_UPDATE'; document: Document }
+  | { type: 'PULL_REQUEST' }
   | { type: 'PING' }
   | { type: 'PONG' };
 
@@ -44,7 +45,7 @@ function isValidMessage(data: unknown): data is SyncMessage {
   if (msg.type === 'LIVE_UPDATE') {
     return !!msg.document && typeof msg.document === 'object';
   }
-  return ['HELLO', 'PING', 'PONG'].includes(msg.type);
+  return ['HELLO', 'PING', 'PONG', 'PULL_REQUEST'].includes(msg.type);
 }
 
 const HEARTBEAT_MS       = 8_000;  // Send PING every 8 s
@@ -59,6 +60,7 @@ export function useP2PSync({
 }: UseP2PSyncOptions) {
   const [peerId, setPeerId] = useState<string | null>(null);
   const [status, setStatus] = useState<SyncStatus>('disconnected');
+  const [isHost, setIsHost] = useState<boolean>(true);
   const [connectedPeers, setConnectedPeers] = useState(0);
   const [lastSyncStats, setLastSyncStats] = useState<MergeResult['stats'] | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -111,7 +113,16 @@ export function useP2PSync({
       }
 
       if (msg.type === 'HELLO') {
-        // Peer introduced itself — reply with our full document library
+        // Client introduced itself — host replies with full library to kick off sync
+        conn.send({
+          type: 'SYNC_OFFER',
+          documents: stripSnapshots(docsRef.current),
+        });
+        return;
+      }
+
+      if (msg.type === 'PULL_REQUEST') {
+        // Peer is explicitly requesting our docs — send them a SYNC_OFFER
         conn.send({
           type: 'SYNC_OFFER',
           documents: stripSnapshots(docsRef.current),
@@ -196,8 +207,10 @@ export function useP2PSync({
   }, []);
 
   // Wire up all event listeners on a DataConnection
+  // role: 'client' = we initiated this connection (send HELLO to start sync)
+  //       'host'   = peer connected to us (wait for their HELLO, do NOT send one)
   const setupConnection = useCallback(
-    (conn: DataConnection) => {
+    (conn: DataConnection, role: 'host' | 'client') => {
       conn.on('open', () => {
         // Clear the pending connection timeout (if any)
         if (connectTimeoutRef.current) {
@@ -210,8 +223,11 @@ export function useP2PSync({
         setErrorMessage(null);
         onToast('Device connected! Syncing notes…', 'success');
         startHeartbeat(conn);
-        // Kick off the sync handshake
-        conn.send({ type: 'HELLO', peerId: peerRef.current?.id ?? '' });
+        // Only the client sends HELLO — this prevents both sides triggering
+        // two simultaneous sync cycles which cause duplicate documents.
+        if (role === 'client') {
+          conn.send({ type: 'HELLO', peerId: peerRef.current?.id ?? '' });
+        }
       });
 
       conn.on('data', (data) => handleData(data, conn));
@@ -250,6 +266,7 @@ export function useP2PSync({
       if (peerRef.current) peerRef.current.destroy();
       connectionsRef.current.clear();
       setConnectedPeers(0);
+      setIsHost(true);
       setStatus('initializing');
       setErrorMessage(null);
 
@@ -267,7 +284,7 @@ export function useP2PSync({
         setStatus('waiting');
       });
 
-      peer.on('connection', (conn) => setupConnection(conn));
+      peer.on('connection', (conn) => setupConnection(conn, 'host'));
 
       peer.on('error', (err) => {
         console.error('[Sync] Peer error:', err);
@@ -286,6 +303,7 @@ export function useP2PSync({
       if (peerRef.current) peerRef.current.destroy();
       connectionsRef.current.clear();
       setConnectedPeers(0);
+      setIsHost(false);
       setStatus('connecting');
       setErrorMessage(null);
 
@@ -306,7 +324,7 @@ export function useP2PSync({
       peer.on('open', (myId) => {
         setPeerId(myId);
         const conn = peer.connect(hostId, { reliable: true });
-        setupConnection(conn);
+        setupConnection(conn, 'client');
       });
 
       peer.on('error', (err) => {
@@ -324,16 +342,36 @@ export function useP2PSync({
     [setupConnection]
   );
 
-  /** Manually trigger a full two-way sync with all connected peers */
+  /** Push: send MY notes to the peer — peer merges and updates their library */
+  const pushToRemote = useCallback(() => {
+    if (connectionsRef.current.size === 0) {
+      onToast('No peer connected', 'error');
+      return;
+    }
+    broadcast({ type: 'SYNC_OFFER', documents: stripSnapshots(docsRef.current) });
+    onToast('Sending your notes to peer…', 'info');
+  }, [broadcast, onToast]);
+
+  /** Receive: ask peer to send their notes — I merge and update my library */
+  const pullFromRemote = useCallback(() => {
+    if (connectionsRef.current.size === 0) {
+      onToast('No peer connected', 'error');
+      return;
+    }
+    broadcast({ type: 'PULL_REQUEST' });
+    onToast('Requesting notes from peer…', 'info');
+  }, [broadcast, onToast]);
+
+  /** Sync All: full two-way exchange — send my docs, peer replies with theirs in SYNC_REPLY */
   const syncNow = useCallback(() => {
     if (connectionsRef.current.size === 0) {
       onToast('No peer connected to sync with', 'error');
       return;
     }
-    broadcast({
-      type: 'SYNC_OFFER',
-      documents: stripSnapshots(docsRef.current),
-    });
+    // Sending SYNC_OFFER is sufficient for two-way sync:
+    // peer merges our docs and sends back SYNC_REPLY with their full merged library.
+    // Adding a simultaneous PULL_REQUEST would cause a second round-trip unnecessarily.
+    broadcast({ type: 'SYNC_OFFER', documents: stripSnapshots(docsRef.current) });
     onToast('Syncing…', 'info');
   }, [broadcast, onToast]);
 
@@ -356,6 +394,7 @@ export function useP2PSync({
     }
     setPeerId(null);
     setConnectedPeers(0);
+    setIsHost(true);
     setStatus('disconnected');
     setLastSyncStats(null);
   }, []);
@@ -395,12 +434,15 @@ export function useP2PSync({
   return {
     peerId,
     status,
+    isHost,
     connectedPeers,
     lastSyncStats,
     errorMessage,
     startHosting,
     connectToHost,
     syncNow,
+    pushToRemote,
+    pullFromRemote,
     disconnect,
     broadcastLiveUpdate,
   };

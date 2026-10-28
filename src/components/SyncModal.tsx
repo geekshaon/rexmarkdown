@@ -3,6 +3,7 @@ import { QRCodeSVG } from 'qrcode.react';
 import {
   X, ArrowLeftRight, CheckCircle2, Copy, RefreshCw,
   AlertCircle, Wifi, Smartphone, Link2, Link2Off,
+  Upload, Download,
 } from 'lucide-react';
 import type { SyncStatus } from '../hooks/useP2PSync';
 import type { MergeResult } from '../utils/syncMerge';
@@ -10,6 +11,7 @@ import type { MergeResult } from '../utils/syncMerge';
 interface SyncModalProps {
   peerId: string | null;
   status: SyncStatus;
+  isHost?: boolean;
   connectedPeers: number;
   lastSyncStats: MergeResult['stats'] | null;
   errorMessage: string | null;
@@ -17,6 +19,8 @@ interface SyncModalProps {
   onStartHost: (forceNew?: boolean) => void;
   onConnectToHost: (hostId: string) => void;
   onSyncNow: () => void;
+  onPushToRemote: () => void;
+  onPullFromRemote: () => void;
   onDisconnect?: () => void;
   onClose: () => void;
   onToast: (msg: string, type?: 'success' | 'error' | 'info') => void;
@@ -25,12 +29,15 @@ interface SyncModalProps {
 export const SyncModal: React.FC<SyncModalProps> = ({
   peerId,
   status,
+  isHost: isHostProp,
   connectedPeers,
   lastSyncStats,
   errorMessage,
   onStartHost,
   onConnectToHost,
   onSyncNow,
+  onPushToRemote,
+  onPullFromRemote,
   onDisconnect,
   onClose,
   onToast,
@@ -51,7 +58,7 @@ export const SyncModal: React.FC<SyncModalProps> = ({
   }, [onClose]);
 
   // Only host peers can share a QR — client peers (who joined) don't expose their ID
-  const isHost = peerId ? !peerId.startsWith('rexmd-client-') : false;
+  const isHost = isHostProp ?? (peerId ? !peerId.startsWith('rexmd-client-') : false);
   const pairingUrl =
     peerId && isHost
       ? `${window.location.origin}${window.location.pathname}?sync=${encodeURIComponent(peerId)}`
@@ -299,25 +306,44 @@ export const SyncModal: React.FC<SyncModalProps> = ({
         <div className="modal__footer sync-modal__footer">
           {isConnected ? (
             <>
-              {/* Sync Now — force a full two-way merge immediately */}
+              {/* Send: push my notes to peer */}
               <button
                 className="btn btn--primary btn--sm"
+                onClick={onPushToRemote}
+                title="Send MY notes to the other device"
+              >
+                <Upload size={13} />
+                <span>Send</span>
+              </button>
+
+              {/* Receive: pull peer's notes to me */}
+              <button
+                className="btn btn--primary btn--sm"
+                onClick={onPullFromRemote}
+                title="Get the other device's notes"
+              >
+                <Download size={13} />
+                <span>Receive</span>
+              </button>
+
+              {/* Sync All: full two-way exchange */}
+              <button
+                className="btn btn--secondary btn--sm"
                 onClick={onSyncNow}
-                title="Force a full two-way merge right now"
+                title="Full two-way sync (Send + Receive at once)"
               >
                 <ArrowLeftRight size={13} />
-                <span>Sync Now</span>
+                <span>Sync All</span>
               </button>
 
               {/* Disconnect */}
               {onDisconnect && (
                 <button
-                  className="btn btn--secondary btn--sm"
+                  className="btn btn--ghost btn--sm"
                   onClick={onDisconnect}
                   title="Disconnect from peer"
                 >
                   <Link2Off size={13} />
-                  <span>Disconnect</span>
                 </button>
               )}
             </>

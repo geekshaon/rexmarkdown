@@ -142,7 +142,11 @@ export function useDocuments() {
       const idx = prev.findIndex((d) => d.id === doc.id);
       if (idx >= 0) {
         const next = [...prev];
-        next[idx] = doc;
+        next[idx] = {
+          ...doc,
+          // Preserve local version history snapshots when receiving live update
+          snapshots: prev[idx].snapshots?.length ? prev[idx].snapshots : (doc.snapshots ?? []),
+        };
         return next;
       }
       return [doc, ...prev];

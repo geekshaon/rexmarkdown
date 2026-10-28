@@ -99,6 +99,39 @@ function App() {
     saveTimerRef.current = setTimeout(() => setIsSaved(true), 800);
   }, [activeDoc, updateDocument, sync]);
 
+  // Document actions with live sync broadcast
+  const handleCreateDocument = useCallback(() => {
+    const doc = createDocument();
+    sync.broadcastLiveUpdate(doc);
+    return doc;
+  }, [createDocument, sync]);
+
+  const handleRenameDocument = useCallback((id: string, title: string) => {
+    const now = Date.now();
+    renameDocument(id, title);
+    const doc = documents.find((d) => d.id === id);
+    if (doc) {
+      sync.broadcastLiveUpdate({ ...doc, title, updatedAt: now });
+    }
+  }, [renameDocument, documents, sync]);
+
+  const handleTogglePin = useCallback((id: string) => {
+    togglePin(id);
+    const doc = documents.find((d) => d.id === id);
+    if (doc) {
+      sync.broadcastLiveUpdate({ ...doc, pinned: !doc.pinned, updatedAt: Date.now() });
+    }
+  }, [togglePin, documents, sync]);
+
+  const handleUpdateTags = useCallback((id: string, tags: string[]) => {
+    const now = Date.now();
+    updateTags(id, tags);
+    const doc = documents.find((d) => d.id === id);
+    if (doc) {
+      sync.broadcastLiveUpdate({ ...doc, tags, updatedAt: now });
+    }
+  }, [updateTags, documents, sync]);
+
   // Format
   const handleFormatRegister = useCallback((fn: (type: string) => void) => {
     formatHandlerRef.current = fn;
@@ -226,7 +259,7 @@ function App() {
         case '2': e.preventDefault(); handleFormat('h2'); break;
         case '3': e.preventDefault(); handleFormat('h3'); break;
         case 's': e.preventDefault(); setIsSaved(true); break;
-        case 'n': e.preventDefault(); createDocument(); break;
+        case 'n': e.preventDefault(); handleCreateDocument(); break;
         case 'h': e.preventDefault(); setShowFindReplace((v) => !v); break;
         case '\\': e.preventDefault(); setSidebarOpen((v) => !v); break;
         case '=':
@@ -341,10 +374,10 @@ function App() {
           open={sidebarOpen}
           onToggle={() => setSidebarOpen((v) => !v)}
           onSelect={selectDocument}
-          onCreate={createDocument}
+          onCreate={handleCreateDocument}
           onDelete={deleteDocument}
-          onRename={renameDocument}
-          onTogglePin={togglePin}
+          onRename={handleRenameDocument}
+          onTogglePin={handleTogglePin}
         />
       )}
 
@@ -367,7 +400,7 @@ function App() {
           onToggleZen={handleToggleZen}
           onShowStats={() => setShowStats(true)}
           onShowHistory={() => setShowHistory(true)}
-          onTogglePin={() => activeDoc && togglePin(activeDoc.id)}
+          onTogglePin={() => activeDoc && handleTogglePin(activeDoc.id)}
           onShowTags={() => setShowTags(true)}
           isSyncing={sync.status === 'connected'}
           onOpenSync={() => setShowSyncModal(true)}
@@ -459,13 +492,13 @@ function App() {
           layoutMode={layoutMode}
           onLayoutChange={setLayoutMode}
           onToggleSidebar={() => setSidebarOpen((v) => !v)}
-          onCreateDoc={createDocument}
+          onCreateDoc={handleCreateDocument}
           onToggleFind={() => setShowFindReplace((v) => !v)}
           onOpenSync={() => setShowSyncModal(true)}
           isSyncing={sync.status === 'connected'}
           docTitle={activeDoc?.title}
           isPinned={activeDoc?.pinned}
-          onTogglePin={() => activeDoc && togglePin(activeDoc.id)}
+          onTogglePin={() => activeDoc && handleTogglePin(activeDoc.id)}
           onShowStats={() => setShowStats(true)}
           onShowHistory={() => setShowHistory(true)}
           onShowTags={() => setShowTags(true)}
@@ -496,7 +529,7 @@ function App() {
       {showTags && activeDoc && (
         <TagEditor
           tags={activeDoc.tags ?? []}
-          onChange={(tags) => { updateTags(activeDoc.id, tags); }}
+          onChange={(tags) => { handleUpdateTags(activeDoc.id, tags); }}
           onClose={() => setShowTags(false)}
         />
       )}
@@ -505,12 +538,15 @@ function App() {
         <SyncModal
           peerId={sync.peerId}
           status={sync.status}
+          isHost={sync.isHost}
           connectedPeers={sync.connectedPeers}
           lastSyncStats={sync.lastSyncStats}
           errorMessage={sync.errorMessage}
           onStartHost={sync.startHosting}
           onConnectToHost={sync.connectToHost}
           onSyncNow={sync.syncNow}
+          onPushToRemote={sync.pushToRemote}
+          onPullFromRemote={sync.pullFromRemote}
           onDisconnect={sync.disconnect}
           onClose={() => setShowSyncModal(false)}
           onToast={addToast}
