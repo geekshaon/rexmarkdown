@@ -2,10 +2,12 @@ import React from 'react';
 import {
   Bold, Italic, Heading1, Heading2, Heading3,
   Link, Image, Code, List, ListOrdered, Quote, Minus, Table, CheckSquare,
+  Keyboard,
 } from 'lucide-react';
 
 interface MobileFormatRibbonProps {
   onFormat: (type: string) => void;
+  onDismissKeyboard?: () => void;
 }
 
 const FORMAT_ITEMS = [
@@ -25,7 +27,7 @@ const FORMAT_ITEMS = [
   { icon: <Minus size={17} />, action: 'hr', label: 'Divider' },
 ];
 
-export const MobileFormatRibbon: React.FC<MobileFormatRibbonProps> = ({ onFormat }) => {
+export const MobileFormatRibbon: React.FC<MobileFormatRibbonProps> = ({ onFormat, onDismissKeyboard }) => {
   return (
     <div className="mobile-ribbon" role="toolbar" aria-label="Mobile markdown formatting">
       <div className="mobile-ribbon__scroll">
@@ -45,6 +47,20 @@ export const MobileFormatRibbon: React.FC<MobileFormatRibbonProps> = ({ onFormat
             {item.icon}
           </button>
         ))}
+        {onDismissKeyboard && (
+          <button
+            type="button"
+            className="mobile-ribbon__btn mobile-ribbon__btn--dismiss"
+            onPointerDown={(e) => {
+              e.preventDefault();
+              onDismissKeyboard();
+            }}
+            title="Hide keyboard"
+            aria-label="Hide keyboard"
+          >
+            <Keyboard size={17} />
+          </button>
+        )}
       </div>
     </div>
   );

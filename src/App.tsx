@@ -232,6 +232,47 @@ function App() {
     return () => window.removeEventListener('keydown', onKey);
   }, [handleFormat, handleToggleZen, createDocument, settings.fontSize, updateSettings]);
 
+  // Mobile virtual keyboard & visual viewport dynamic height handling
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+
+    let timer: ReturnType<typeof setTimeout>;
+
+    const handleViewportChange = () => {
+      const vh = vv.height;
+      const ih = window.innerHeight;
+      // If visual viewport shrank significantly, virtual keyboard is open
+      const keyboardOpen = ih - vh > 100;
+
+      document.documentElement.style.setProperty('--app-height', `${vh}px`);
+      document.body.classList.toggle('keyboard-open', keyboardOpen);
+
+      // On iOS, prevent viewport scroll displacement
+      if (window.scrollY !== 0) {
+        window.scrollTo(0, 0);
+      }
+
+      if (keyboardOpen) {
+        clearTimeout(timer);
+        timer = setTimeout(() => {
+          editorApiRef.current?.scrollCursorIntoView(90);
+        }, 120);
+      }
+    };
+
+    handleViewportChange();
+    vv.addEventListener('resize', handleViewportChange);
+    vv.addEventListener('scroll', handleViewportChange);
+
+    return () => {
+      clearTimeout(timer);
+      vv.removeEventListener('resize', handleViewportChange);
+      vv.removeEventListener('scroll', handleViewportChange);
+      document.body.classList.remove('keyboard-open');
+    };
+  }, []);
+
   const isZen = layoutMode === 'zen';
 
   return (
@@ -338,7 +379,10 @@ function App() {
 
         {/* Mobile quick format ribbon (when editing) */}
         {!isZen && layoutMode !== 'preview' && (
-          <MobileFormatRibbon onFormat={handleFormat} />
+          <MobileFormatRibbon
+            onFormat={handleFormat}
+            onDismissKeyboard={() => editorApiRef.current?.blur()}
+          />
         )}
 
         {/* Status bar */}

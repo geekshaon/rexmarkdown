@@ -35,6 +35,8 @@ export interface EditorApi {
   format: (type: string) => void;
   insertImage: (dataUrl: string) => void;
   focus: () => void;
+  blur: () => void;
+  scrollCursorIntoView: (yMargin?: number) => void;
 }
 
 interface EditorProps {
@@ -100,10 +102,19 @@ function buildTheme(fontSize: number) {
   return EditorView.theme(
     {
       '&': { height: '100%', fontSize: `${fontSize}px`, fontFamily: '"JetBrains Mono", "Fira Code", monospace' },
-      '.cm-content': { padding: '20px 24px', caretColor: '#c678dd', minHeight: '100%' },
+      '.cm-content': {
+        padding: '18px 20px min(60vh, 480px) 20px',
+        caretColor: '#c678dd',
+        minHeight: '100%',
+      },
       '.cm-focused': { outline: 'none' },
       '.cm-editor': { height: '100%' },
-      '.cm-scroller': { overflow: 'auto', fontFamily: 'inherit' },
+      '.cm-scroller': {
+        overflow: 'auto',
+        fontFamily: 'inherit',
+        scrollBehavior: 'smooth',
+        overscrollBehaviorY: 'contain',
+      },
       '.cm-line': { lineHeight: '1.75' },
       '.cm-cursor': { borderLeftColor: '#c678dd', borderLeftWidth: '2px' },
       '.cm-gutters': { background: '#1a1d27', borderRight: '1px solid #2a2d3a', color: '#4b5264' },
@@ -133,6 +144,7 @@ export const Editor: React.FC<EditorProps> = ({
   const viewRef = useRef<EditorView | null>(null);
   const isExternal = useRef(false);
   const themeCompartment = useRef<Compartment | null>(null);
+  const scrollRafRef = useRef<number | null>(null);
 
   // Expose format handler to parent
   useEffect(() => {
@@ -188,10 +200,33 @@ export const Editor: React.FC<EditorProps> = ({
           if (update.docChanged && !isExternal.current) {
             onChange(update.state.doc.toString());
           }
+          // If the user typed or doc changed while focused, keep cursor visible above keyboard
+          if (update.docChanged && update.view.hasFocus) {
+            const head = update.state.selection.main.head;
+            if (scrollRafRef.current) cancelAnimationFrame(scrollRafRef.current);
+            scrollRafRef.current = requestAnimationFrame(() => {
+              if (viewRef.current && viewRef.current.hasFocus) {
+                viewRef.current.dispatch({
+                  effects: EditorView.scrollIntoView(head, { y: 'nearest', yMargin: 80 }),
+                });
+              }
+            });
+          }
         }),
         EditorView.lineWrapping,
-        // Scroll listener for sync
+        // Scroll & focus listener
         EditorView.domEventHandlers({
+          focus(_event, view) {
+            // When opening virtual keyboard on mobile, keyboard animation takes 250-320ms
+            setTimeout(() => {
+              if (view.hasFocus) {
+                const head = view.state.selection.main.head;
+                view.dispatch({
+                  effects: EditorView.scrollIntoView(head, { y: 'center', yMargin: 90 }),
+                });
+              }
+            }, 300);
+          },
           scroll(_event, view) {
             if (!onScrollPct) return;
             const el = view.scrollDOM;
@@ -206,7 +241,11 @@ export const Editor: React.FC<EditorProps> = ({
     viewRef.current = view;
     onViewReady?.(view);
 
-    return () => { view.destroy(); viewRef.current = null; };
+    return () => {
+      if (scrollRafRef.current) cancelAnimationFrame(scrollRafRef.current);
+      view.destroy();
+      viewRef.current = null;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -360,6 +399,19 @@ export const Editor: React.FC<EditorProps> = ({
     viewRef.current?.focus();
   }, []);
 
+  const doBlur = useCallback(() => {
+    viewRef.current?.contentDOM.blur();
+  }, []);
+
+  const doScrollCursorIntoView = useCallback((yMargin = 80) => {
+    const view = viewRef.current;
+    if (!view) return;
+    const head = view.state.selection.main.head;
+    view.dispatch({
+      effects: EditorView.scrollIntoView(head, { y: 'center', yMargin }),
+    });
+  }, []);
+
   useEffect(() => {
     if (onEditorApi) {
       onEditorApi({
@@ -371,9 +423,11 @@ export const Editor: React.FC<EditorProps> = ({
         format: doFormat,
         insertImage: doInsertImage,
         focus: doFocus,
+        blur: doBlur,
+        scrollCursorIntoView: doScrollCursorIntoView,
       });
     }
-  }, [onEditorApi, doFind, doFindNext, doFindPrev, doReplace, doReplaceAll, doFormat, doInsertImage, doFocus]);
+  }, [onEditorApi, doFind, doFindNext, doFindPrev, doReplace, doReplaceAll, doFormat, doInsertImage, doFocus, doBlur, doScrollCursorIntoView]);
 
   return (
     <div

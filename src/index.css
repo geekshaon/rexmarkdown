@@ -54,6 +54,7 @@
 html, body, #root {
   height: 100%;
   height: 100dvh;
+  height: var(--app-height, 100dvh);
   width: 100%;
   overflow: hidden;
   overscroll-behavior-y: none;
@@ -91,6 +92,8 @@ body {
   display: flex;
   height: 100%;
   height: 100dvh;
+  height: var(--app-height, 100dvh);
+  max-height: var(--app-height, 100dvh);
   width: 100vw;
   background: var(--bg-base);
   overflow: hidden;
@@ -594,6 +597,9 @@ body {
 
 .editor-container .cm-scroller {
   font-family: var(--font-mono) !important;
+  scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
 }
 
 /* ─────────────────────────────────────────────
@@ -882,6 +888,18 @@ body {
   transform: scale(0.92);
 }
 
+.mobile-ribbon__btn--dismiss {
+  margin-left: auto;
+  background: var(--bg-elevated);
+  border-color: var(--border-bright);
+  color: var(--accent);
+}
+
+.mobile-ribbon__btn--dismiss:active {
+  background: var(--accent);
+  color: #ffffff;
+}
+
 .mobile-nav {
   display: none;
   position: fixed;
@@ -1152,6 +1170,21 @@ body {
     padding-bottom: calc(56px + env(safe-area-inset-bottom, 0px));
   }
 
+  /* When virtual keyboard is active, hide bottom nav and let workspace fill visible space */
+  body.keyboard-open .mobile-nav {
+    display: none !important;
+  }
+
+  body.keyboard-open .main {
+    padding-bottom: 0 !important;
+  }
+
+  body.keyboard-open .mobile-ribbon {
+    position: relative;
+    z-index: 100;
+    box-shadow: 0 -3px 14px rgba(0, 0, 0, 0.5);
+  }
+
   .status-bar {
     display: none !important;
   }
@@ -1169,12 +1202,13 @@ body {
   }
 
   .preview-content {
-    padding: 16px 14px calc(80px + env(safe-area-inset-bottom, 0px));
+    padding: 16px 14px calc(100px + env(safe-area-inset-bottom, 0px));
     font-size: 15px;
   }
 
+  /* Massive overscroll bottom padding so the last 3-4 lines can scroll well above keyboard */
   .cm-content {
-    padding: 14px 14px 80px !important;
+    padding: 16px 16px min(60vh, 480px) !important;
   }
 }
 
