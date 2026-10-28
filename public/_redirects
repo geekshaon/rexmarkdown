@@ -1,0 +1,5 @@
+/*
+  Cloudflare Pages SPA routing fix
+  All routes fall back to index.html
+*/
+/*  /index.html  200
