@@ -73,23 +73,28 @@ function App() {
   });
 
   // Auto-connect if page opened with ?sync=<hostPeerId> (e.g. mobile scanned QR)
+  // Destructure stable callback to avoid re-running the effect on every render
+  const { connectToHost } = sync;
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const syncPeer = params.get('sync');
     if (syncPeer) {
       window.history.replaceState({}, '', window.location.pathname);
       addToast('Pairing with remote device via WebRTC...', 'info');
-      sync.connectToHost(syncPeer);
+      connectToHost(syncPeer);
       setShowSyncModal(true);
     }
-  }, [sync, addToast]);
+  }, [connectToHost, addToast]);
 
   // Content change
   const handleContentChange = useCallback((value: string) => {
     if (!activeDoc) return;
+    // Compute timestamp once — both updateDocument and broadcastLiveUpdate must share it
+    // so the stored doc and the broadcast payload have identical updatedAt values.
+    const now = Date.now();
     setIsSaved(false);
-    updateDocument(activeDoc.id, { content: value });
-    sync.broadcastLiveUpdate({ ...activeDoc, content: value, updatedAt: Date.now() });
+    updateDocument(activeDoc.id, { content: value, updatedAt: now });
+    sync.broadcastLiveUpdate({ ...activeDoc, content: value, updatedAt: now });
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(() => setIsSaved(true), 800);
   }, [activeDoc, updateDocument, sync]);
@@ -506,6 +511,7 @@ function App() {
           onStartHost={sync.startHosting}
           onConnectToHost={sync.connectToHost}
           onSyncNow={sync.syncNow}
+          onDisconnect={sync.disconnect}
           onClose={() => setShowSyncModal(false)}
           onToast={addToast}
         />

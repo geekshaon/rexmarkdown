@@ -1789,6 +1789,12 @@ body {
   color: #4ecb71;
 }
 
+.sync-status-badge--connecting {
+  border-color: #38bdf840;
+  background: #38bdf80d;
+  color: #38bdf8;
+}
+
 .sync-status-badge--error {
   border-color: #f8717150;
   background: #f871710f;

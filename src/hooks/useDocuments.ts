@@ -72,7 +72,9 @@ export function useDocuments() {
     setDocuments((prev) =>
       prev.map((doc) => {
         if (doc.id !== id) return doc;
-        const updated = { ...doc, ...changes, updatedAt: Date.now() };
+        // Respect a caller-provided updatedAt (e.g. from broadcastLiveUpdate) to avoid
+        // double-timestamp drift; fall back to Date.now() for normal edits.
+        const updated = { ...doc, ...changes, updatedAt: changes.updatedAt ?? Date.now() };
         if (changes.content !== undefined) {
           updated.wordCount = countWords(changes.content);
         }
